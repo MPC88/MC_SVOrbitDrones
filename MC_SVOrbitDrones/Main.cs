@@ -1,8 +1,10 @@
 ﻿using BepInEx;
+using BepInEx.Configuration;
 using HarmonyLib;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using static UnityEngine.GraphicsBuffer;
 
 namespace MC_SVOrbitDrones
 {
@@ -15,13 +17,25 @@ namespace MC_SVOrbitDrones
         public const string pluginVersion = "0.0.3";
 
         // Mod
-        private const int HP_REGEN_TIME = 3;
-        private const float HP_REGEN_PERC = 0.05f;
+        public static ConfigEntry<int> cfgHPRegenTime;
+        public static ConfigEntry<int> cfgHPRegenPercent;
         private static Dictionary<Drone, float> hpRegenTimers = new Dictionary<Drone, float>();
 
         public void Awake()
         {
             Harmony.CreateAndPatchAll(typeof(Main));
+
+            cfgHPRegenTime = Config.Bind<int>(
+                "Drone regen",
+                "Tick rate",
+                3,
+                "Number of seconds before each % heal tick.");
+
+            cfgHPRegenPercent = Config.Bind<int>(
+                "Drone regen",
+                "Percent per tick",
+                5,
+                "% healed per tick");
         }
 
         #region orbit
@@ -39,7 +53,7 @@ namespace MC_SVOrbitDrones
         [HarmonyPrefix]
         private static void DroneSetActions_Pre(Drone __instance, out bool __state)
         {
-            if(__instance.droneType != 1 && __instance.target == GameManager.instance.Player.transform && __instance.owner != null && __instance.owner.IsPlayer())
+            if(__instance.droneType != 1 && GameManager.instance.Player != null && __instance.target == GameManager.instance.Player.transform && __instance.owner != null && __instance.owner.IsPlayer())
             {   
                 __instance.target = null;
                 __state = true;
@@ -52,7 +66,7 @@ namespace MC_SVOrbitDrones
         [HarmonyPostfix]
         private static void DroneSetActions_Post(Drone __instance, bool __state)
         {
-            if (__instance.ae.active && __instance.target == null && (__state || __instance.returning) && __instance.owner != null && __instance.owner.IsPlayer())
+            if (__instance.ae.active && GameManager.instance.Player != null && __instance.target == null && (__state || __instance.returning) && __instance.owner != null && __instance.owner.IsPlayer())
             {
                 __instance.target = GameManager.instance.Player.transform;
                 __instance.returning = false;
@@ -74,11 +88,11 @@ namespace MC_SVOrbitDrones
                     hpRegenTimers.Add(__instance, 0);
 
                 hpRegenTimers[__instance] += Time.deltaTime;
-
-                if (hpRegenTimers[__instance] >= HP_REGEN_TIME)
+                if (hpRegenTimers[__instance] >= cfgHPRegenTime.Value)
                 {
-                    __instance.currHP += (__instance.baseHP * (HP_REGEN_PERC * (hpRegenTimers[__instance] / HP_REGEN_TIME)));
-                    if(__instance.currHP >= __instance.baseHP)
+                    float hpRegenPerc = (float)cfgHPRegenPercent.Value / 100;
+                    __instance.currHP += (__instance.baseHP * (hpRegenPerc * (hpRegenTimers[__instance] / cfgHPRegenTime.Value)));                    
+                    if (__instance.currHP >= __instance.baseHP)
                     {
                         __instance.currHP = __instance.currHP > __instance.baseHP ? __instance.baseHP : __instance.currHP;
                         hpRegenTimers.Remove(__instance);
